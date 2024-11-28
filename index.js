@@ -65,36 +65,40 @@ const bot = new TelegramApi(BOT_TOKEN, { polling: true })
 
 bot.setMyCommands([
   { command: '/start', description: 'Start Bot' },
-  // { command: '/help', description: 'Help Info' },
-  { command: '/w', description: 'Check Static Wallet Balance' },
-  { command: '/mw', description: 'Check Marketing Wallet Balance' }
+  { command: '/w', description: 'Check Wallet Balance' },
+  { command: '/mw', description: 'Check Marketing Wallet Balance' },
+  { command: '/copyaddress', description: 'Copy Marketing Wallet Address' }
 ])
 
 bot.on('message', async msg => {
-  const text = msg.text
+  const text = msg.text?.split('@')[0]
   const chatId = msg.chat.id
 
   try {
     if (text === '/w') {
-      const botMsg = await bot.sendMessage(chatId, 'Checking static wallet...')
+      const botMsg = await bot.sendMessage(chatId, 'Checking wallet...')
       const balances = await checkStaticWalletBalance()
       
       if (balances) {
         await bot.deleteMessage(chatId, botMsg.message_id)
         await bot.sendMessage(chatId,
-          `Our marketing wallet: [${MARKETING_WALLET}](https://etherscan.io/address/${MARKETING_WALLET})\n\n` +
+          `*Our marketing wallet* : [${MARKETING_WALLET}](https://etherscan.io/address/${MARKETING_WALLET})\n\n` +
+          `*Current Balance:* \n`+
           `${balances.ETH} ETH\n`+
           `${balances.BNB} BNB\n` +
           `${balances.MATIC} MATIC\n` +
           `${balances.AVAX} AVAX\n` +
           `${balances.FTM} FTM\n`,
           { 
-            parse_mode: 'Markdown',
+            parse_mode: 'Markdown', 
             disable_web_page_preview: true 
           }
         )
       } else {
-        await bot.editMessage(chatId, botMsg.message_id, 'Error checking static wallet balance')
+        await bot.editMessageText('Error checking wallet balance', {
+          chat_id: chatId,
+          message_id: botMsg.message_id
+        })
       }
       return
     }
@@ -106,7 +110,7 @@ bot.on('message', async msg => {
       if (balances) {
         await bot.deleteMessage(chatId, botMsg.message_id)
         await bot.sendMessage(chatId,
-          `Our marketing wallet: [${MARKETING_WALLET}](https://etherscan.io/address/${MARKETING_WALLET})\n\n` +
+          `*Current Balance:* \n`+
           `${balances.ETH} ETH\n` +
           `${balances.MATRIX} Matrix\n`,
           { 
@@ -115,103 +119,133 @@ bot.on('message', async msg => {
           }
         )
       } else {
-        await bot.editMessage(chatId, botMsg.message_id, 'Error checking marketing wallet balance')
+        await bot.editMessageText('Error checking marketing wallet balance', {
+          chat_id: chatId,
+          message_id: botMsg.message_id
+        })
       }
       return
     }
     
     if (text === '/start') {
       // await bot.sendSticker(chatId, STICKER)
+      
+      const greeting = msg.chat.type === 'private' 
+        ? `👋🏻 Greetings ${msg.from.first_name}${(msg.from.last_name === undefined) ? '' : ` ${msg.from.last_name}`}!`
+        : '👋🏻 Greetings everyone!'
+
       await bot.sendMessage(chatId,
-        `👋🏻 Greetings ${msg.from.first_name}${(msg.from.last_name === undefined) ? '': ` ${msg.from.last_name}`}!\n` +
-        'Welcome to the Matrix marketing wallet'
+        `${greeting}\n` +
+        'Welcome to the Matrix marketing wallet\n\n' +
+        'Available commands : \n' +
+        '/w - Check Wallet Balance\n' +
+        '/mw - Check Marketing Wallet Balance\n' +
+        '/copyaddress - Copy Wallet Address'
       )
 
-      // await bot.sendMessage(chatId,
-      //   'Please enter a wallet address to check its balance.\n' +
-      //   'Format: 0xb85eaf59e6dc69ac7b6d92c6c24e1a83b582b293'
-      // )
-
-      await users.findOne({ id: chatId }).then(async res => {
-        if (!res) {
-          await users.insertOne({
-            id: chatId,
-            username: msg.from.username,
-            first_name: msg.from.first_name,
-            last_name: msg.from.last_name,
-            start_date: new Date()
-          })
+      if (msg.chat.type === 'private') {
+        await users.findOne({ id: chatId }).then(async res => {
+          if (!res) {
+            await users.insertOne({
+              id: chatId,
+              username: msg.from.username,
+              first_name: msg.from.first_name,
+              last_name: msg.from.last_name,
+              start_date: new Date()
+            })
+          }
+        })
+      }
+      return
+    }
+    
+    if (text === '/copyaddress') {
+      await bot.sendMessage(chatId,
+        '`0xce93cbe534ea857c756c6e202f454a8651f02838`\n\n' +
+        'Click the address above to copy it to your clipboard.',
+        { 
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true 
         }
-      })
-    } else if (text === '/help') {
+      )
+      return
+    }
+    
+    if (text === '/help') {
       await bot.sendMessage(chatId,
         'Please enter a wallet address to check its balance.\n' +
         'Format: 0xb85eaf59e6dc69ac7b6d92c6c24e1a83b582b293'
       )
+      return
+    }
+    
+    // Check if input is a wallet address
+    const isAddress = await bnbWeb3.utils.isAddress(text)
+    if(isAddress) {
+      const botMsg = await bot.sendMessage(chatId, 'Checking...')
+      const botMsgId = botMsg.message_id
+
+      const eth = await ethWeb3.eth.getBalance(text)
+      const bnb = await bnbWeb3.eth.getBalance(text)
+      const matic = await maticWeb3.eth.getBalance(text)
+      const avax = await avaxWeb3.eth.getBalance(text)
+      const ftm = await ftmWeb3.eth.getBalance(text)
+      
+      bot.deleteMessage(chatId, botMsgId)
+      bot.sendMessage(chatId,
+        `${bnbWeb3.utils.fromWei(eth, 'ether')} ETH\n` +
+        `${bnbWeb3.utils.fromWei(bnb, 'ether')} BNB\n` +
+        `${bnbWeb3.utils.fromWei(matic, 'ether')} MATIC\n` +
+        `${bnbWeb3.utils.fromWei(avax, 'ether')} AVAX\n` +
+        `${bnbWeb3.utils.fromWei(ftm, 'ether')} FTM\n`
+      )
+
+      await users.updateOne({ id: chatId },
+        {
+          $set: {
+            username: msg.from.username,
+            first_name: msg.from.first_name,
+            last_name: msg.from.last_name,
+            date_last_call: new Date(),
+            last_call: text
+          },
+          $inc: { number_calls: 1 },
+          $push: {
+            calls: {
+              call: text,
+              date: new Date()
+            }
+          }
+        }
+      )
     } else {
-      const isAddress = await bnbWeb3.utils.isAddress(text)
-
-      if(isAddress) {
-        const botMsg = await bot.sendMessage(chatId, 'Checking...')
-        const botMsgId = botMsg.message_id
-
-        const eth = await ethWeb3.eth.getBalance(text)
-        const bnb = await bnbWeb3.eth.getBalance(text)
-        const matic = await maticWeb3.eth.getBalance(text)
-        const avax = await avaxWeb3.eth.getBalance(text)
-        const ftm = await ftmWeb3.eth.getBalance(text)
-        
-        bot.deleteMessage(chatId, botMsgId)
-        bot.sendMessage(chatId,
-          `${bnbWeb3.utils.fromWei(eth, 'ether')} ETH\n` +
-          `${bnbWeb3.utils.fromWei(bnb, 'ether')} BNB\n` +
-          `${bnbWeb3.utils.fromWei(matic, 'ether')} MATIC\n` +
-          `${bnbWeb3.utils.fromWei(avax, 'ether')} AVAX\n` +
-          `${bnbWeb3.utils.fromWei(ftm, 'ether')} FTM\n`
-        )
-
-        await users.updateOne({ id: chatId },
-          {
-            $set: {
-              username: msg.from.username,
-              first_name: msg.from.first_name,
-              last_name: msg.from.last_name,
-              date_last_call: new Date(),
-              last_call: text
-            },
-            $inc: { number_calls: 1 },
-            $push: {
-              calls: {
-                call: text,
-                date: new Date()
-              }
+      await bot.sendMessage(chatId, 'Invalid wallet address')
+      
+      await users.updateOne({ id: chatId },
+        {
+          $set: {
+            username: msg.from.username,
+            first_name: msg.from.first_name,
+            last_name: msg.from.last_name,
+            date_last_bad_call: new Date(),
+            last_bad_call: text
+          },
+          $inc: { number_bad_calls: 1 },
+          $push: {
+            bad_calls: {
+              call: text,
+              date: new Date()
             }
           }
-        )
-      } else {
-        await bot.sendMessage(chatId, 'Invalid wallet address')
-        
-        await users.updateOne({ id: chatId },
-          {
-            $set: {
-              username: msg.from.username,
-              first_name: msg.from.first_name,
-              last_name: msg.from.last_name,
-              date_last_bad_call: new Date(),
-              last_bad_call: text
-            },
-            $inc: { number_bad_calls: 1 },
-            $push: {
-              bad_calls: {
-                call: text,
-                date: new Date()
-              }
-            }
-          }
-        )
-      }
+        }
+      )
     }
   } catch (err) {
-    await bot.sendMessage(chatId, 'An error occurred. Please try again.')
+    console.error('Bot error:', err)
+    try {
+      await bot.sendMessage(chatId, 'An error occurred. Please try again.')
+    } catch (sendError) {
+      console.error('Error sending error message:', sendError)
+    }
   }
 })
