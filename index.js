@@ -219,26 +219,30 @@ bot.on('message', async msg => {
         }
       )
     } else {
-      await bot.sendMessage(chatId, 'Invalid wallet address')
+      // await bot.sendMessage(chatId, 'Invalid wallet address')
       
-      await users.updateOne({ id: chatId },
-        {
-          $set: {
-            username: msg.from.username,
-            first_name: msg.from.first_name,
-            last_name: msg.from.last_name,
-            date_last_bad_call: new Date(),
-            last_bad_call: text
-          },
-          $inc: { number_bad_calls: 1 },
-          $push: {
-            bad_calls: {
-              call: text,
-              date: new Date()
+      if (msg.chat.type === 'private') {
+        await users.updateOne(
+          { id: chatId },
+          {
+            $set: {
+              username: msg.from.username,
+              first_name: msg.from.first_name,
+              last_name: msg.from.last_name,
+              date_last_bad_call: new Date(),
+              last_bad_call: text
+            },
+            $inc: { number_bad_calls: 1 },
+            $push: {
+              bad_calls: {
+                call: text,
+                date: new Date()
+              }
             }
-          }
-        }
-      )
+          },
+          { upsert: true }
+        )
+      }
     }
   } catch (err) {
     console.error('Bot error:', err)
